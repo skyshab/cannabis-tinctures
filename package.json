@@ -1,0 +1,26 @@
+{
+  "name": "cannabis-tinctures",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "client",
+    "server",
+    "shared"
+  ],
+  "scripts": {
+    "predev": "npm run build -w @cannabis-tinctures/shared",
+    "dev": "concurrently -n shared,server,client -c blue,green,magenta \"npm run dev -w @cannabis-tinctures/shared\" \"npm run dev -w @cannabis-tinctures/server\" \"npm run dev -w @cannabis-tinctures/client\"",
+    "predev:server": "npm run build -w @cannabis-tinctures/shared",
+    "dev:client": "npm run dev -w @cannabis-tinctures/client",
+    "dev:server": "npm run dev -w @cannabis-tinctures/server",
+    "build": "npm run build -w @cannabis-tinctures/shared && npm run build -w @cannabis-tinctures/client && npm run build -w @cannabis-tinctures/server",
+    "start": "npm run start -w @cannabis-tinctures/server",
+    "test": "npm run test -w @cannabis-tinctures/shared",
+    "typecheck": "npm run typecheck -w @cannabis-tinctures/shared && npm run typecheck -w @cannabis-tinctures/server && npm run typecheck -w @cannabis-tinctures/client"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.5.4"
+  }
+}
