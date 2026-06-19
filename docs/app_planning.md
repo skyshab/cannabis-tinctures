@@ -1,4 +1,4 @@
-# Hemp Tincture App — Planning and Build Instructions
+# Tinctura — Planning and Build Instructions
 
 ## Purpose
 

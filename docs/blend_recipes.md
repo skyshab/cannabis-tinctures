@@ -1,4 +1,4 @@
-# Hemp Project — Blend Recipes and Tincture Concepts
+# Tinctura — Blend Recipes and Tincture Concepts
 
 ## Purpose of this document
 

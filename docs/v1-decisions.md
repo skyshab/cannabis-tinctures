@@ -1,4 +1,4 @@
-# Hemp Tincture App v1 Decisions
+# Tinctura v1 Decisions
 
 This document records the v1 decisions made after reviewing the exported project notes.
 

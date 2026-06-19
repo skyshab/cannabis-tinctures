@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { IngredientProduct, Recipe } from "@cannabis-tinctures/shared";
+import type { IngredientProduct, Recipe } from "@tinctura/shared";
 import type { createRepository } from "../db/repository.js";
 
 type Repository = ReturnType<typeof createRepository>;

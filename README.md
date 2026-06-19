@@ -1,13 +1,13 @@
-# Cannabis Tinctures
+# Tinctura
 
-A local-first web app for planning, costing, saving, and revising cannabis tincture recipes.
+A local-first web app for planning, costing, saving, and revising small-batch tinctures, extracts, and botanical formulas.
 
-The app is designed around small-batch tincture planning, especially 30ml bottles with 1ml doses. It tracks ingredient products, compound profiles, recipe targets, calculated ingredient amounts, carrier oil fill, and per-bottle/per-dose costs.
+Tinctura is designed around formula planning, especially recipes where ingredient potency, dose size, batch volume, and cost all matter. The current seed data focuses on cannabinoid tinctures, but the model is general enough for other tinctures, extracts, infused oils, and blends.
 
 ## What It Does
 
 - Manage ingredient products with costs, purchase amounts, units, potency profiles, and notes.
-- Model ingredients that contribute multiple compounds, such as full-spectrum distillate or RSO.
+- Model ingredients that contribute multiple compounds or active constituents, such as full-spectrum distillate, RSO, or botanical extracts.
 - Create and save tincture recipes with editable bottle size, dose size, target compounds, ingredients, and notes.
 - Calculate per-bottle active targets, compound contributions, remaining deficits, overages, carrier oil volume, and recipe costs.
 - Store local data in SQLite through a small Fastify backend.

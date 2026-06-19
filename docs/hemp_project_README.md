@@ -1,4 +1,4 @@
-# Hemp Tincture Blend App — Project README
+# Tinctura — Project README
 
 ## Project purpose
 

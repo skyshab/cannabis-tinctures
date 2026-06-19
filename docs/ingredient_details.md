@@ -1,4 +1,4 @@
-# Hemp Project — Ingredient Details and Cost Notes
+# Tinctura — Ingredient Details and Cost Notes
 
 ## Purpose of this document
 

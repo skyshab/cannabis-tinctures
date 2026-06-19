@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
-import { calculateRecipe, type IngredientProduct, type Recipe } from "@cannabis-tinctures/shared";
+import { calculateRecipe, type IngredientProduct, type Recipe } from "@tinctura/shared";
 
 type IngredientRow = {
   id: string;
@@ -61,7 +61,7 @@ type LineRow = {
 
 const defaultRecipeCategories = ["focus", "relaxation", "sleep", "thc_relaxation", "custom"];
 const defaultAppBranding = {
-  title: "Cannabis Tinctures",
+  title: "Tinctura",
   tagline: "Local recipe planning."
 };
 

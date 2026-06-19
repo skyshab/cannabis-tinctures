@@ -1,4 +1,4 @@
-import type { IngredientProduct, Recipe, RecipeCalculationResult } from "@cannabis-tinctures/shared";
+import type { IngredientProduct, Recipe, RecipeCalculationResult } from "@tinctura/shared";
 
 export interface RecipeSummary {
   recipe: Recipe;

@@ -1,5 +1,5 @@
 {
-  "name": "cannabis-tinctures",
+  "name": "tinctura",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,15 +9,15 @@
     "shared"
   ],
   "scripts": {
-    "predev": "npm run build -w @cannabis-tinctures/shared",
-    "dev": "concurrently -n shared,server,client -c blue,green,magenta \"npm run dev -w @cannabis-tinctures/shared\" \"npm run dev -w @cannabis-tinctures/server\" \"npm run dev -w @cannabis-tinctures/client\"",
-    "predev:server": "npm run build -w @cannabis-tinctures/shared",
-    "dev:client": "npm run dev -w @cannabis-tinctures/client",
-    "dev:server": "npm run dev -w @cannabis-tinctures/server",
-    "build": "npm run build -w @cannabis-tinctures/shared && npm run build -w @cannabis-tinctures/client && npm run build -w @cannabis-tinctures/server",
-    "start": "npm run start -w @cannabis-tinctures/server",
-    "test": "npm run test -w @cannabis-tinctures/shared",
-    "typecheck": "npm run typecheck -w @cannabis-tinctures/shared && npm run typecheck -w @cannabis-tinctures/server && npm run typecheck -w @cannabis-tinctures/client"
+    "predev": "npm run build -w @tinctura/shared",
+    "dev": "concurrently -n shared,server,client -c blue,green,magenta \"npm run dev -w @tinctura/shared\" \"npm run dev -w @tinctura/server\" \"npm run dev -w @tinctura/client\"",
+    "predev:server": "npm run build -w @tinctura/shared",
+    "dev:client": "npm run dev -w @tinctura/client",
+    "dev:server": "npm run dev -w @tinctura/server",
+    "build": "npm run build -w @tinctura/shared && npm run build -w @tinctura/client && npm run build -w @tinctura/server",
+    "start": "npm run start -w @tinctura/server",
+    "test": "npm run test -w @tinctura/shared",
+    "typecheck": "npm run typecheck -w @tinctura/shared && npm run typecheck -w @tinctura/server && npm run typecheck -w @tinctura/client"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

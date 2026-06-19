@@ -11,7 +11,7 @@ import {
   type Recipe,
   type RecipeIngredientLine,
   type RecipeTarget
-} from "@cannabis-tinctures/shared";
+} from "@tinctura/shared";
 import {
   createIngredient,
   deleteIngredient,
@@ -66,7 +66,7 @@ const concentrationTypes: ConcentrationType[] = ["percent_by_mass", "mg_per_g", 
 const profileSources: ProfileSource[] = ["coa", "vendor_label", "estimate", "unknown"];
 const fallbackRecipeCategories = ["focus", "relaxation", "sleep", "thc_relaxation", "custom"];
 const fallbackBranding: AppBranding = {
-  title: "Cannabis Tinctures",
+  title: "Tinctura",
   tagline: "Local recipe planning."
 };
 
