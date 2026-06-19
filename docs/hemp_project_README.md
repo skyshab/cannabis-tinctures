@@ -153,10 +153,10 @@ Example structure:
 ```text
 hemp-tincture-app/
   docs/
-    README.md
-    ingredient-details.md
-    blend-recipes.md
-    app-planning.md
+    hemp_project_README.md
+    ingredient_details.md
+    blend_recipes.md
+    app_planning.md
   src/
     domain/
       calculations.ts

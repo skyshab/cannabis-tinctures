@@ -87,6 +87,7 @@ This project is for personal recipe planning and recordkeeping. It does not prov
 For more context, see:
 
 - `docs/v1-decisions.md`
-- `hemp_project_README.md`
-- `blend_recipes.md`
-- `ingredient_details.md`
+- `docs/hemp_project_README.md`
+- `docs/app_planning.md`
+- `docs/blend_recipes.md`
+- `docs/ingredient_details.md`
