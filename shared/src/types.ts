@@ -31,9 +31,11 @@ export interface ActiveProfileEntry {
 
 export interface IngredientProduct {
   id: string;
+  permalink: string;
   name: string;
   category: IngredientCategory;
   source?: string;
+  purchaseUrl?: string;
   costBasisType: CostBasisType;
   costTotal?: number;
   amountPurchased?: number;
@@ -68,6 +70,7 @@ export interface RecipeIngredientLine {
 
 export interface Recipe {
   id: string;
+  permalink: string;
   name: string;
   purpose?: string;
   bottleVolumeMl: number;

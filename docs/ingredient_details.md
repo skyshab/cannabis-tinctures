@@ -358,8 +358,8 @@ These are not final database rows, but are useful starting records.
   cost_actual_bundle_share: 16.67
   cost_replacement: 10.00
   active_profile:
-    CBD: 0.99
-  notes: Assumed 99% purity unless COA says otherwise.
+    CBD: 0.94264
+  notes: COA reports CBD 94.264%, total cannabinoids 94.807%, and THC not detected.
 
 - name: CBG Isolate
   category: isolate
@@ -368,8 +368,10 @@ These are not final database rows, but are useful starting records.
   cost_actual_bundle_share: 16.67
   cost_replacement: 20.00
   active_profile:
-    CBG: 0.99
-  notes: User wants to use full 1000mg package in current recipe set.
+    CBG: 0.95118
+    THC: 0.00042
+    CBD: 0.00040
+  notes: COA reports total cannabinoids 95.20%, THC 0.042%, and CBD 0.040%; CBG is modeled as the remaining 95.118%.
 
 - name: CBN Isolate
   category: isolate
@@ -378,8 +380,8 @@ These are not final database rows, but are useful starting records.
   cost_actual_bundle_share: 16.67
   cost_replacement: 30.00
   active_profile:
-    CBN: 0.99
-  notes: User only has 1000mg and wants recipe set adjusted to fit this limit.
+    CBN: 0.9614
+  notes: COA reports total cannabinoids 96.14%, with THC and CBD not detected.
 
 - name: Fern Valley Farms Full-Spectrum CBD Distillate
   category: distillate

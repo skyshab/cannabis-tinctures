@@ -16,7 +16,7 @@ INSERT OR IGNORE INTO ingredient_products (
   NULL,
   NULL,
   NULL,
-  'Cannilabs order: 20g CBD isolate. Item cost $60 plus $3.87 proportional shipping share.',
+  'Cannilabs order: 20g CBD isolate. Item cost $60 plus $3.87 proportional shipping share. COA: CBD 94.264%, total cannabinoids 94.807%, THC not detected.',
   0,
   '2026-06-18T00:00:00.000Z',
   '2026-06-18T00:00:00.000Z'
@@ -34,7 +34,7 @@ INSERT OR IGNORE INTO ingredient_products (
   NULL,
   NULL,
   NULL,
-  'Cannilabs order: 10g CBG isolate. Item cost $40 plus $2.58 proportional shipping share.',
+  'Cannilabs order: 10g CBG isolate. Item cost $40 plus $2.58 proportional shipping share. COA: total cannabinoids 95.20%, THC 0.042%, CBD 0.040%; modeled CBG as remaining 95.118%.',
   0,
   '2026-06-18T00:00:00.000Z',
   '2026-06-18T00:00:00.000Z'
@@ -52,7 +52,7 @@ INSERT OR IGNORE INTO ingredient_products (
   NULL,
   NULL,
   NULL,
-  'Cannilabs order: 10g CBN isolate 98%+. Item cost $55 plus $3.55 proportional shipping share.',
+  'Cannilabs order: 10g CBN isolate. Item cost $55 plus $3.55 proportional shipping share. COA: total cannabinoids 96.14%, THC not detected, CBD not detected.',
   0,
   '2026-06-18T00:00:00.000Z',
   '2026-06-18T00:00:00.000Z'
@@ -138,27 +138,45 @@ INSERT OR IGNORE INTO ingredient_active_profiles (
   '11111111-1111-4111-8111-111111111111',
   'CBD',
   'percent_by_mass',
-  0.98,
-  'estimate',
-  'Assumed 98% by mass until COA/vendor detail is available.'
+  0.94264,
+  'coa',
+  'COA: CBD 94.264%; total cannabinoids 94.807%; THC not detected.'
 ),
 (
   'aaaaaaaa-2222-4222-8222-aaaaaaaaaaaa',
   '22222222-2222-4222-8222-222222222222',
   'CBG',
   'percent_by_mass',
-  0.98,
-  'estimate',
-  'Assumed 98% by mass until COA/vendor detail is available.'
+  0.95118,
+  'coa',
+  'COA: total cannabinoids 95.20%; THC 0.042%; CBD 0.040%; CBG modeled as remaining cannabinoids.'
+),
+(
+  'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb',
+  '22222222-2222-4222-8222-222222222222',
+  'THC',
+  'percent_by_mass',
+  0.00042,
+  'coa',
+  'COA: THC 0.042%.'
+),
+(
+  'cccccccc-2222-4222-8222-cccccccccccc',
+  '22222222-2222-4222-8222-222222222222',
+  'CBD',
+  'percent_by_mass',
+  0.00040,
+  'coa',
+  'COA: CBD 0.040%.'
 ),
 (
   'aaaaaaaa-3333-4333-8333-aaaaaaaaaaaa',
   '33333333-3333-4333-8333-333333333333',
   'CBN',
   'percent_by_mass',
-  0.98,
-  'vendor_label',
-  'Order image lists CBN isolate as 98%+.'
+  0.9614,
+  'coa',
+  'COA: total cannabinoids 96.14%; THC not detected; CBD not detected.'
 ),
 (
   'aaaaaaaa-4444-4444-8444-aaaaaaaaaaaa',
@@ -178,4 +196,3 @@ INSERT OR IGNORE INTO ingredient_active_profiles (
   'estimate',
   'No COA; estimate only.'
 );
-

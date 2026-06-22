@@ -4,7 +4,12 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react()],
   server: {
-    allowedHosts: ["tinctura.local", "tinctura.localhost"],
+    allowedHosts: [
+      "tinctura.local",
+      "tinctura.localhost",
+      "cannabis-tinctures.local",
+      "cannabis-tinctures.localhost"
+    ],
     port: 5173,
     proxy: {
       "/api": "http://localhost:3000"

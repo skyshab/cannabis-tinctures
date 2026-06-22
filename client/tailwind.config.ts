@@ -6,11 +6,10 @@ export default {
     extend: {
       colors: {
         ink: "#1f2933",
-        leaf: "#31634a",
+        leaf: "rgb(108 159 133)",
         mist: "#eef4ef"
       }
     }
   },
   plugins: []
 } satisfies Config;
-

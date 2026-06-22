@@ -7,12 +7,6 @@ type Repository = ReturnType<typeof createRepository>;
 export async function registerApiRoutes(app: FastifyInstance, repo: Repository): Promise<void> {
   app.get("/api/health", async () => ({ ok: true }));
 
-  app.get("/api/settings/branding", async () => repo.getAppBranding());
-
-  app.put<{ Body: { title: string; tagline: string } }>("/api/settings/branding", async (request) =>
-    repo.saveAppBranding(request.body)
-  );
-
   app.get("/api/settings/recipe-categories", async () => ({ categories: repo.getRecipeCategories() }));
 
   app.put<{ Body: { categories: string[] } }>("/api/settings/recipe-categories", async (request) => ({

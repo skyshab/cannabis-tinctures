@@ -181,9 +181,9 @@ Shipping is allocated proportionally by item cost.
 
 Seed profiles:
 
-- CBD isolate: CBD `98% by mass`, source `estimate`.
-- CBG isolate: CBG `98% by mass`, source `estimate`.
-- CBN isolate: CBN `98% by mass`, source `vendor_label`.
+- CBD isolate: CBD `94.264% by mass`, total cannabinoids `94.807%`, THC not detected, source `coa`.
+- CBG isolate: total cannabinoids `95.20%`, THC `0.042%`, CBD `0.040%`, modeled CBG `95.118% by mass`, source `coa`.
+- CBN isolate: CBN modeled from total cannabinoids at `96.14% by mass`, THC and CBD not detected, source `coa`.
 
 ### Fern Valley Farms Full-Spectrum CBD Distillate
 

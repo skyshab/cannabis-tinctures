@@ -4,9 +4,11 @@ import { calculateRecipe, type IngredientProduct, type Recipe } from "@tinctura/
 
 type IngredientRow = {
   id: string;
+  permalink: string;
   name: string;
   category: IngredientProduct["category"];
   source: string | null;
+  purchase_url: string | null;
   cost_basis_type: IngredientProduct["costBasisType"];
   cost_total: number | null;
   amount_purchased: number | null;
@@ -33,6 +35,7 @@ type ProfileRow = {
 
 type RecipeRow = {
   id: string;
+  permalink: string;
   name: string;
   purpose: Recipe["purpose"] | null;
   bottle_volume_ml: number;
@@ -60,22 +63,54 @@ type LineRow = {
 };
 
 const defaultRecipeCategories = ["focus", "relaxation", "sleep", "thc_relaxation", "custom"];
-const defaultAppBranding = {
-  title: "Tinctura",
-  tagline: "Local recipe planning."
-};
 
-export interface AppBranding {
-  title: string;
-  tagline: string;
+function slugifyPermalink(value: string | undefined, fallback: string): string {
+  const slug = (value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return slug || fallback;
+}
+
+function normalizePurchaseUrl(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
+  return `https://${trimmed}`;
+}
+
+function nextUniquePermalink(
+  db: Database.Database,
+  table: "ingredient_products" | "recipes",
+  desired: string | undefined,
+  currentId: string,
+  fallback: string
+): string {
+  const base = slugifyPermalink(desired, fallback);
+  const query = db.prepare(`SELECT id FROM ${table} WHERE permalink = ? AND id <> ? LIMIT 1`);
+  let permalink = base;
+  let suffix = 2;
+
+  while (query.get(permalink, currentId)) {
+    permalink = `${base}-${suffix}`;
+    suffix += 1;
+  }
+
+  return permalink;
 }
 
 function mapIngredient(row: IngredientRow, profiles: ProfileRow[]): IngredientProduct {
   return {
     id: row.id,
+    permalink: row.permalink,
     name: row.name,
     category: row.category,
     source: row.source ?? undefined,
+    purchaseUrl: row.purchase_url ?? undefined,
     costBasisType: row.cost_basis_type,
     costTotal: row.cost_total ?? undefined,
     amountPurchased: row.amount_purchased ?? undefined,
@@ -103,6 +138,7 @@ function mapIngredient(row: IngredientRow, profiles: ProfileRow[]): IngredientPr
 function mapRecipe(row: RecipeRow, targets: TargetRow[], lines: LineRow[]): Recipe {
   return {
     id: row.id,
+    permalink: row.permalink,
     name: row.name,
     purpose: row.purpose ?? undefined,
     bottleVolumeMl: row.bottle_volume_ml,
@@ -129,41 +165,6 @@ function mapRecipe(row: RecipeRow, targets: TargetRow[], lines: LineRow[]): Reci
 }
 
 export function createRepository(db: Database.Database) {
-  function getAppBranding(): AppBranding {
-    const row = db.prepare("SELECT value FROM app_settings WHERE key = ?").get("app_branding") as
-      | { value: string }
-      | undefined;
-
-    if (!row) return defaultAppBranding;
-
-    try {
-      const parsed = JSON.parse(row.value) as Partial<AppBranding>;
-      return {
-        title: typeof parsed.title === "string" && parsed.title.trim() ? parsed.title : defaultAppBranding.title,
-        tagline: typeof parsed.tagline === "string" ? parsed.tagline : defaultAppBranding.tagline
-      };
-    } catch {
-      return defaultAppBranding;
-    }
-  }
-
-  function saveAppBranding(branding: AppBranding): AppBranding {
-    const nextBranding = {
-      title: branding.title.trim() || defaultAppBranding.title,
-      tagline: branding.tagline.trim()
-    };
-
-    db.prepare(
-      `INSERT INTO app_settings (key, value, updated_at)
-       VALUES (?, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET
-         value = excluded.value,
-         updated_at = excluded.updated_at`
-    ).run("app_branding", JSON.stringify(nextBranding), new Date().toISOString());
-
-    return nextBranding;
-  }
-
   function getRecipeCategories(): string[] {
     const row = db.prepare("SELECT value FROM app_settings WHERE key = ?").get("recipe_categories") as
       | { value: string }
@@ -231,34 +232,43 @@ export function createRepository(db: Database.Database) {
   }
 
   function getRecipe(id: string): Recipe | undefined {
-    return listRecipes().find((recipe) => recipe.id === id);
+    return listRecipes().find((recipe) => recipe.id === id || recipe.permalink === id);
   }
 
   function getIngredient(id: string): IngredientProduct | undefined {
-    return listIngredients().find((ingredient) => ingredient.id === id);
+    return listIngredients().find((ingredient) => ingredient.id === id || ingredient.permalink === id);
   }
 
   const saveIngredientTransaction = db.transaction((ingredient: IngredientProduct) => {
     const now = new Date().toISOString();
     const id = ingredient.id || randomUUID();
+    const permalink = nextUniquePermalink(
+      db,
+      "ingredient_products",
+      ingredient.permalink || ingredient.name,
+      id,
+      "ingredient"
+    );
     const existing = db.prepare("SELECT id, created_at FROM ingredient_products WHERE id = ?").get(id) as
       | { id: string; created_at: string }
       | undefined;
 
     db.prepare(
       `INSERT INTO ingredient_products (
-        id, name, category, source, cost_basis_type, cost_total, amount_purchased,
+        id, permalink, name, category, source, purchase_url, cost_basis_type, cost_total, amount_purchased,
         amount_unit, unit_cost, unit_cost_unit, density_g_per_ml, density_source,
         notes, is_archived, created_at, updated_at
       ) VALUES (
-        @id, @name, @category, @source, @costBasisType, @costTotal, @amountPurchased,
+        @id, @permalink, @name, @category, @source, @purchaseUrl, @costBasisType, @costTotal, @amountPurchased,
         @amountUnit, @unitCost, @unitCostUnit, @densityGPerMl, @densitySource,
         @notes, @isArchived, @createdAt, @updatedAt
       )
       ON CONFLICT(id) DO UPDATE SET
+        permalink = excluded.permalink,
         name = excluded.name,
         category = excluded.category,
         source = excluded.source,
+        purchase_url = excluded.purchase_url,
         cost_basis_type = excluded.cost_basis_type,
         cost_total = excluded.cost_total,
         amount_purchased = excluded.amount_purchased,
@@ -272,9 +282,11 @@ export function createRepository(db: Database.Database) {
         updated_at = excluded.updated_at`
     ).run({
       id,
+      permalink,
       name: ingredient.name,
       category: ingredient.category,
       source: ingredient.source ?? null,
+      purchaseUrl: normalizePurchaseUrl(ingredient.purchaseUrl),
       costBasisType: ingredient.costBasisType,
       costTotal: ingredient.costTotal ?? null,
       amountPurchased: ingredient.amountPurchased ?? null,
@@ -325,17 +337,19 @@ export function createRepository(db: Database.Database) {
   const saveRecipeTransaction = db.transaction((recipe: Recipe) => {
     const now = new Date().toISOString();
     const id = recipe.id || randomUUID();
+    const permalink = nextUniquePermalink(db, "recipes", recipe.permalink || recipe.name, id, "recipe");
     const existing = db.prepare("SELECT id, created_at FROM recipes WHERE id = ?").get(id) as
       | { id: string; created_at: string }
       | undefined;
 
     db.prepare(
       `INSERT INTO recipes (
-        id, name, purpose, bottle_volume_ml, dose_volume_ml, notes, created_at, updated_at
+        id, permalink, name, purpose, bottle_volume_ml, dose_volume_ml, notes, created_at, updated_at
       ) VALUES (
-        @id, @name, @purpose, @bottleVolumeMl, @doseVolumeMl, @notes, @createdAt, @updatedAt
+        @id, @permalink, @name, @purpose, @bottleVolumeMl, @doseVolumeMl, @notes, @createdAt, @updatedAt
       )
       ON CONFLICT(id) DO UPDATE SET
+        permalink = excluded.permalink,
         name = excluded.name,
         purpose = excluded.purpose,
         bottle_volume_ml = excluded.bottle_volume_ml,
@@ -344,6 +358,7 @@ export function createRepository(db: Database.Database) {
         updated_at = excluded.updated_at`
     ).run({
       id,
+      permalink,
       name: recipe.name,
       purpose: recipe.purpose ?? null,
       bottleVolumeMl: recipe.bottleVolumeMl,
@@ -404,8 +419,6 @@ export function createRepository(db: Database.Database) {
   }
 
   return {
-    getAppBranding,
-    saveAppBranding,
     getRecipeCategories,
     saveRecipeCategories,
     listIngredients,

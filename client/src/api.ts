@@ -5,11 +5,6 @@ export interface RecipeSummary {
   calculation: RecipeCalculationResult;
 }
 
-export interface AppBranding {
-  title: string;
-  tagline: string;
-}
-
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     headers: {
@@ -60,17 +55,6 @@ export function deleteIngredient(id: string): Promise<{ ok: true }> {
 
 export function fetchRecipes(): Promise<RecipeSummary[]> {
   return request("/api/recipes");
-}
-
-export function fetchAppBranding(): Promise<AppBranding> {
-  return request("/api/settings/branding");
-}
-
-export function saveAppBranding(branding: AppBranding): Promise<AppBranding> {
-  return request("/api/settings/branding", {
-    method: "PUT",
-    body: JSON.stringify(branding)
-  });
 }
 
 export function fetchRecipeCategories(): Promise<{ categories: string[] }> {

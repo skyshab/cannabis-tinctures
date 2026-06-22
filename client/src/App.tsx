@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   calculateRecipe,
+  rebalanceRecipeIngredients,
   type ActiveProfileEntry,
   type AmountUnit,
+  type RecipeCalculationResult,
   type ConcentrationType,
   type CostBasisType,
   type IngredientCategory,
@@ -16,15 +18,12 @@ import {
   createIngredient,
   deleteIngredient,
   deleteRecipe,
-  fetchAppBranding,
   fetchIngredients,
   fetchRecipeCategories,
   fetchRecipes,
-  saveAppBranding,
   saveIngredient,
   saveRecipeCategories,
   saveRecipe,
-  type AppBranding,
   type RecipeSummary
 } from "./api";
 import { compoundSummary, money, number } from "./format";
@@ -65,14 +64,35 @@ const costBasisTypes: CostBasisType[] = ["total_cost", "unit_cost", "none"];
 const concentrationTypes: ConcentrationType[] = ["percent_by_mass", "mg_per_g", "mg_per_ml", "percent_by_volume"];
 const profileSources: ProfileSource[] = ["coa", "vendor_label", "estimate", "unknown"];
 const fallbackRecipeCategories = ["focus", "relaxation", "sleep", "thc_relaxation", "custom"];
-const fallbackBranding: AppBranding = {
-  title: "Tinctura",
-  tagline: "Local recipe planning."
-};
+const appTitle = "Tinctura";
+const appTagline = "Local recipe planning.";
+
+function slugifyPermalink(value: string | undefined, fallback: string): string {
+  const slug = (value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return slug || fallback;
+}
 
 const nowIso = () => new Date().toISOString();
-const recipePath = (id: string, mode: DetailMode = "read") => `/recipes/${encodeURIComponent(id)}${mode === "edit" ? "/edit" : ""}`;
-const ingredientPath = (id: string, mode: DetailMode = "read") => `/ingredients/${encodeURIComponent(id)}${mode === "edit" ? "/edit" : ""}`;
+function finiteInputNumber(value: string): number | undefined {
+  if (value.trim() === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+const recipePath = (recipe: Pick<Recipe, "id" | "permalink"> | string, mode: DetailMode = "read") => {
+  const permalink = typeof recipe === "string" ? recipe : recipe.permalink || recipe.id;
+  return `/recipes/${encodeURIComponent(permalink)}${mode === "edit" ? "/edit" : ""}`;
+};
+const ingredientPath = (ingredient: Pick<IngredientProduct, "id" | "permalink"> | string, mode: DetailMode = "read") => {
+  const permalink = typeof ingredient === "string" ? ingredient : ingredient.permalink || ingredient.id;
+  return `/ingredients/${encodeURIComponent(permalink)}${mode === "edit" ? "/edit" : ""}`;
+};
 
 function parseRoute(pathname: string): AppRoute {
   const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -124,6 +144,7 @@ function defaultRecipe(ingredients: IngredientProduct[]): Recipe {
 
   return {
     id: crypto.randomUUID(),
+    permalink: slugifyPermalink("New Recipe", "recipe"),
     name: "New Recipe",
     purpose: "custom",
     bottleVolumeMl: 30,
@@ -144,9 +165,11 @@ function defaultIngredient(): IngredientProduct {
 
   return {
     id: crypto.randomUUID(),
+    permalink: slugifyPermalink("New Ingredient", "ingredient"),
     name: "New Ingredient",
     category: "other",
     source: "",
+    purchaseUrl: "",
     costBasisType: "none",
     notes: "",
     isArchived: false,
@@ -162,6 +185,7 @@ function cloneRecipe(recipe: Recipe, name = `${recipe.name} Copy`): Recipe {
   return {
     ...structuredClone(recipe),
     id: crypto.randomUUID(),
+    permalink: slugifyPermalink(name, "recipe"),
     name,
     targets: recipe.targets.map(({ id: _id, recipeId: _recipeId, ...target }) => target),
     ingredients: recipe.ingredients.map(({ id: _id, recipeId: _recipeId, ...line }) => line),
@@ -175,7 +199,6 @@ export function App() {
   const [ingredients, setIngredients] = useState<IngredientProduct[]>([]);
   const [recipes, setRecipes] = useState<RecipeSummary[]>([]);
   const [recipeCategories, setRecipeCategories] = useState<string[]>(fallbackRecipeCategories);
-  const [branding, setBranding] = useState<AppBranding>(fallbackBranding);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [recipeMode, setRecipeMode] = useState<DetailMode>("read");
   const [selectedIngredient, setSelectedIngredient] = useState<IngredientProduct | null>(null);
@@ -192,16 +215,14 @@ export function App() {
   }
 
   async function load() {
-    const [ingredientData, recipeData, categoryData, brandingData] = await Promise.all([
+    const [ingredientData, recipeData, categoryData] = await Promise.all([
       fetchIngredients(),
       fetchRecipes(),
-      fetchRecipeCategories(),
-      fetchAppBranding()
+      fetchRecipeCategories()
     ]);
     setIngredients(ingredientData);
     setRecipes(recipeData);
     setRecipeCategories(categoryData.categories);
-    setBranding(brandingData);
   }
 
   useEffect(() => {
@@ -211,8 +232,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    document.title = branding.title || fallbackBranding.title;
-  }, [branding.title]);
+    document.title = appTitle;
+  }, []);
 
   useEffect(() => {
     function handlePopState() {
@@ -236,12 +257,15 @@ export function App() {
 
   useEffect(() => {
     if (route.name === "recipeDetail") {
-      const recipe = recipes.find(({ recipe: item }) => item.id === route.id)?.recipe;
+      const recipe = recipes.find(({ recipe: item }) => item.id === route.id || item.permalink === route.id)?.recipe;
       setSelectedRecipe(recipe ? structuredClone(recipe) : null);
       setRecipeMode(route.mode);
       setSelectedIngredient(null);
       setIngredientMode("read");
       setShowRecipeStart(false);
+      if (recipe && recipe.permalink && route.id !== recipe.permalink) {
+        navigate(recipePath(recipe, route.mode), { replace: true });
+      }
       return;
     }
 
@@ -264,7 +288,7 @@ export function App() {
     }
 
     if (route.name === "recipeNewFrom") {
-      const sourceRecipe = recipes.find(({ recipe }) => recipe.id === route.sourceId)?.recipe;
+      const sourceRecipe = recipes.find(({ recipe }) => recipe.id === route.sourceId || recipe.permalink === route.sourceId)?.recipe;
       setSelectedRecipe(sourceRecipe ? cloneRecipe(sourceRecipe, `New from ${sourceRecipe.name}`) : null);
       setRecipeMode("edit");
       setSelectedIngredient(null);
@@ -274,12 +298,15 @@ export function App() {
     }
 
     if (route.name === "ingredientDetail") {
-      const ingredient = ingredients.find((item) => item.id === route.id);
+      const ingredient = ingredients.find((item) => item.id === route.id || item.permalink === route.id);
       setSelectedIngredient(ingredient ? structuredClone(ingredient) : null);
       setIngredientMode(route.mode);
       setSelectedRecipe(null);
       setRecipeMode("read");
       setShowRecipeStart(false);
+      if (ingredient && ingredient.permalink && route.id !== ingredient.permalink) {
+        navigate(ingredientPath(ingredient, route.mode), { replace: true });
+      }
       return;
     }
 
@@ -317,20 +344,26 @@ export function App() {
   }
 
   function openRecipe(recipe: Recipe) {
-    navigate(recipePath(recipe.id));
+    navigate(recipePath(recipe));
   }
 
   async function handleSaveRecipe(recipe: Recipe) {
     setIsSaving(true);
     showToast("Saving recipe...");
+    const requestedPermalink = slugifyPermalink(recipe.permalink || recipe.name, "recipe");
     try {
       const saved = await saveRecipe(recipe);
       await load();
       setSelectedRecipe(saved);
       setRecipeMode("read");
       setShowRecipeStart(false);
-      navigate(recipePath(saved.id));
-      showToast("Recipe saved.", "success");
+      navigate(recipePath(saved));
+      showToast(
+        saved.permalink !== requestedPermalink
+          ? `Recipe saved. That permalink was already in use, so it was saved as "${saved.permalink}".`
+          : "Recipe saved.",
+        "success"
+      );
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Save failed.", "error");
     } finally {
@@ -388,8 +421,13 @@ export function App() {
       await load();
       setSelectedIngredient(saved);
       setIngredientMode("read");
-      navigate(ingredientPath(saved.id));
-      showToast("Ingredient saved.", "success");
+      navigate(ingredientPath(saved));
+      showToast(
+        saved.permalink !== slugifyPermalink(ingredient.permalink || ingredient.name, "ingredient")
+          ? `Ingredient saved. That permalink was already in use, so it was saved as "${saved.permalink}".`
+          : "Ingredient saved.",
+        "success"
+      );
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Ingredient save failed.", "error");
     } finally {
@@ -411,20 +449,6 @@ export function App() {
     }
   }
 
-  async function handleSaveBranding(nextBranding: AppBranding) {
-    setIsSaving(true);
-    showToast("Saving app branding...");
-    try {
-      const saved = await saveAppBranding(nextBranding);
-      setBranding(saved);
-      showToast("App branding saved.", "success");
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Branding save failed.", "error");
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
   const selectedRecipeExists = Boolean(selectedRecipe && recipes.some(({ recipe }) => recipe.id === selectedRecipe.id));
   const selectedIngredientExists = Boolean(selectedIngredient && ingredients.some((item) => item.id === selectedIngredient.id));
 
@@ -434,8 +458,11 @@ export function App() {
         <div className="sticky top-0 flex min-h-screen flex-col p-4">
           <div>
             <div className="mb-6">
-              <h1 className="text-xl font-semibold tracking-tight">{branding.title}</h1>
-              {branding.tagline ? <p className="mt-1 text-sm text-slate-600">{branding.tagline}</p> : null}
+              <div className="flex items-center gap-2">
+                <img alt="" className="h-8 w-8 rounded-md" src="/favicon.png" />
+                <h1 className="text-xl font-semibold tracking-tight">{appTitle}</h1>
+              </div>
+              <p className="mt-1 text-sm text-slate-600">{appTagline}</p>
             </div>
 
             <nav className="grid gap-2">
@@ -505,14 +532,14 @@ export function App() {
               onBack={() => navigate("/recipes")}
               onCancel={() => {
                 if (selectedRecipeExists) {
-                  navigate(recipePath(selectedRecipe.id));
+                  navigate(recipePath(selectedRecipe));
                 } else {
                   navigate("/recipes");
                 }
               }}
               onDelete={(recipe) => setPendingDelete({ kind: "recipe", item: recipe })}
-              onDuplicate={(recipe) => navigate(`/recipes/new/from/${encodeURIComponent(recipe.id)}`)}
-              onEdit={() => selectedRecipe && navigate(recipePath(selectedRecipe.id, "edit"))}
+              onDuplicate={(recipe) => navigate(`/recipes/new/from/${encodeURIComponent(recipe.permalink || recipe.id)}`)}
+              onEdit={() => selectedRecipe && navigate(recipePath(selectedRecipe, "edit"))}
               onSave={handleSaveRecipe}
             />
           ) : (
@@ -520,8 +547,8 @@ export function App() {
               recipes={recipes}
               showStart={showRecipeStart}
               onNew={() => navigate("/recipes/new")}
-              onSelect={(recipe) => navigate(recipePath(recipe.id))}
-              onStartFromRecipe={(recipe) => navigate(`/recipes/new/from/${encodeURIComponent(recipe.id)}`)}
+              onSelect={(recipe) => navigate(recipePath(recipe))}
+              onStartFromRecipe={(recipe) => navigate(`/recipes/new/from/${encodeURIComponent(recipe.permalink || recipe.id)}`)}
               onStartScratch={() => navigate("/recipes/new/scratch")}
             />
           )
@@ -537,12 +564,12 @@ export function App() {
               onBack={() => navigate("/ingredients")}
               onCancel={() => {
                 if (selectedIngredientExists) {
-                  navigate(ingredientPath(selectedIngredient.id));
+                  navigate(ingredientPath(selectedIngredient));
                 } else {
                   navigate("/ingredients");
                 }
               }}
-              onEdit={() => selectedIngredient && navigate(ingredientPath(selectedIngredient.id, "edit"))}
+              onEdit={() => selectedIngredient && navigate(ingredientPath(selectedIngredient, "edit"))}
               onDelete={(ingredient) => setPendingDelete({ kind: "ingredient", item: ingredient })}
               onSave={handleSaveIngredient}
             />
@@ -550,17 +577,15 @@ export function App() {
             <IngredientsListView
               ingredients={ingredients}
               onNew={() => navigate("/ingredients/new")}
-              onSelect={(ingredient) => navigate(ingredientPath(ingredient.id))}
+              onSelect={(ingredient) => navigate(ingredientPath(ingredient))}
             />
           )
         ) : null}
 
         {view === "settings" ? (
           <SettingsView
-            branding={branding}
             isSaving={isSaving}
             recipeCategories={recipeCategories}
-            onSaveBranding={handleSaveBranding}
             onSaveRecipeCategories={handleSaveRecipeCategories}
           />
         ) : null}
@@ -645,6 +670,30 @@ function TrashIcon() {
         strokeLinejoin="round"
         strokeWidth="1.8"
       />
+    </svg>
+  );
+}
+
+function LockIcon({ locked }: { locked: boolean }) {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+      {locked ? (
+        <path
+          d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6v-9Zm6 4v2"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.8"
+        />
+      ) : (
+        <path
+          d="M8 11V8a4 4 0 0 1 7.7-1.5M6 11h12v9H6v-9Zm6 4v2"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.8"
+        />
+      )}
     </svg>
   );
 }
@@ -915,29 +964,19 @@ function RecipeReadOnly({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <ReadOnlyPanel title="Target Compounds">
-          <SimpleTable
-            headers={["Compound", "Target per dose", "Target per bottle"]}
-            rows={recipe.targets.map((target) => [
-              target.compound,
-              `${number(target.targetMgPerDose, 2)}mg`,
-              `${number(target.targetMgPerDose * calculation.dosesPerBottle, 2)}mg`
-            ])}
-          />
-        </ReadOnlyPanel>
-
-        <ReadOnlyPanel title="Results">
-          <SimpleTable
-            headers={["Compound", "Actual per dose", "Status"]}
-            rows={calculation.contributions.map((contribution) => [
-              contribution.compound,
-              `${number(contribution.actualMgPerDose, 2)}mg`,
-              contribution.status
-            ])}
-          />
-        </ReadOnlyPanel>
-      </div>
+      <ReadOnlyPanel title="Compounds">
+        <SimpleTable
+          headers={["Compound", "Target / dose", "Target / bottle", "Actual / dose", "Actual / bottle", "Status"]}
+          rows={calculation.contributions.map((contribution) => [
+            contribution.compound,
+            `${number(contribution.targetMgPerDose, 2)}mg`,
+            `${number(contribution.targetMgPerBottle, 2)}mg`,
+            `${number(contribution.actualMgPerDose, 2)}mg`,
+            `${number(contribution.actualMgPerBottle, 2)}mg`,
+            contribution.status
+          ])}
+        />
+      </ReadOnlyPanel>
 
       <ReadOnlyPanel title="Ingredients">
         <SimpleTable
@@ -950,6 +989,12 @@ function RecipeReadOnly({
         />
       </ReadOnlyPanel>
 
+      {recipe.notes ? (
+        <ReadOnlyPanel title="Notes">
+          <p className="text-sm text-slate-700">{recipe.notes}</p>
+        </ReadOnlyPanel>
+      ) : null}
+
       {calculation.warnings.length ? (
         <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
           <div className="font-medium">Warnings</div>
@@ -959,12 +1004,6 @@ function RecipeReadOnly({
             ))}
           </ul>
         </div>
-      ) : null}
-
-      {recipe.notes ? (
-        <ReadOnlyPanel title="Notes">
-          <p className="text-sm text-slate-700">{recipe.notes}</p>
-        </ReadOnlyPanel>
       ) : null}
     </div>
   );
@@ -991,26 +1030,60 @@ function RecipeEditor({
     setDraft(recipe);
   }, [recipe]);
 
-  function updateTarget(index: number, patch: Partial<RecipeTarget>) {
-    setDraft((current) => ({
-      ...current,
-      targets: current.targets.map((target, targetIndex) => (targetIndex === index ? { ...target, ...patch } : target))
-    }));
+  function rebalance(draftRecipe: Recipe) {
+    return rebalanceRecipeIngredients(draftRecipe, ingredients).recipe;
   }
 
-  function updateLine(index: number, patch: Partial<RecipeIngredientLine>) {
-    setDraft((current) => ({
-      ...current,
-      ingredients: current.ingredients.map((line, lineIndex) => (lineIndex === index ? { ...line, ...patch } : line))
-    }));
+  function handleRecalculate() {
+    setDraft((current) => rebalance(current));
+  }
+
+  function updateTarget(index: number, patch: Partial<RecipeTarget>) {
+    setDraft((current) =>
+      rebalance({
+        ...current,
+        targets: current.targets.map((target, targetIndex) => (targetIndex === index ? { ...target, ...patch } : target))
+      })
+    );
+  }
+
+  function updateLine(index: number, patch: Partial<RecipeIngredientLine>, lockLine = false) {
+    setDraft((current) =>
+      rebalance({
+        ...current,
+        ingredients: current.ingredients.map((line, lineIndex) =>
+          lineIndex === index
+            ? {
+                ...line,
+                ...patch,
+                locked: patch.ingredientProductId ? false : lockLine ? true : patch.locked ?? line.locked
+              }
+            : line
+        )
+      })
+    );
   }
 
   const ingredientById = useMemo(() => new Map(ingredients.map((ingredient) => [ingredient.id, ingredient])), [ingredients]);
   const calculation = useMemo(() => calculateRecipe(draft, ingredients), [draft, ingredients]);
+  const balanceWarnings = useMemo(() => rebalanceRecipeIngredients(draft, ingredients).warnings, [draft, ingredients]);
   const categoryOptions = useMemo(
     () => Array.from(new Set([draft.purpose ?? "custom", ...recipeCategories])),
     [draft.purpose, recipeCategories]
   );
+
+  function updateName(name: string) {
+    setDraft((current) => {
+      const currentAutomaticPermalink = slugifyPermalink(current.name, "recipe");
+      const shouldUpdatePermalink = !current.permalink || current.permalink === currentAutomaticPermalink;
+
+      return {
+        ...current,
+        name,
+        permalink: shouldUpdatePermalink ? slugifyPermalink(name, "recipe") : current.permalink
+      };
+    });
+  }
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -1020,6 +1093,9 @@ function RecipeEditor({
           <p className="text-sm text-slate-500">Save keeps your changes; Cancel returns to the read-only view.</p>
         </div>
         <div className="flex gap-2">
+          <button className="rounded-md bg-slate-100 px-3 py-1.5 text-sm" onClick={handleRecalculate} type="button">
+            Recalculate
+          </button>
           <button className="rounded-md bg-slate-100 px-3 py-1.5 text-sm" onClick={onCancel} type="button">
             Cancel
           </button>
@@ -1038,7 +1114,14 @@ function RecipeEditor({
         <EditorSection title="Basics">
           <div className="grid gap-3 sm:grid-cols-2">
             <Label text="Name">
-              <input className="input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+              <input className="input" value={draft.name} onChange={(event) => updateName(event.target.value)} />
+            </Label>
+            <Label text="Permalink">
+              <input
+                className="input"
+                value={draft.permalink}
+                onChange={(event) => setDraft({ ...draft, permalink: slugifyPermalink(event.target.value, "recipe") })}
+              />
             </Label>
             <Label text="Category">
               <select className="input" value={draft.purpose ?? "custom"} onChange={(event) => setDraft({ ...draft, purpose: event.target.value as Recipe["purpose"] })}>
@@ -1050,35 +1133,70 @@ function RecipeEditor({
               </select>
             </Label>
             <Label text="Bottle ml">
-              <input className="input" min="0" type="number" value={draft.bottleVolumeMl} onChange={(event) => setDraft({ ...draft, bottleVolumeMl: Number(event.target.value) })} />
+              <input
+                className="input"
+                min="0"
+                type="number"
+                value={draft.bottleVolumeMl}
+                onChange={(event) => {
+                  const value = finiteInputNumber(event.target.value);
+                  if (value !== undefined) setDraft(rebalance({ ...draft, bottleVolumeMl: value }));
+                }}
+              />
             </Label>
             <Label text="Dose ml">
-              <input className="input" min="0" type="number" value={draft.doseVolumeMl} onChange={(event) => setDraft({ ...draft, doseVolumeMl: Number(event.target.value) })} />
+              <input
+                className="input"
+                min="0"
+                type="number"
+                value={draft.doseVolumeMl}
+                onChange={(event) => {
+                  const value = finiteInputNumber(event.target.value);
+                  if (value !== undefined) setDraft(rebalance({ ...draft, doseVolumeMl: value }));
+                }}
+              />
             </Label>
           </div>
         </EditorSection>
 
-        <EditorSection title="Target Compounds">
-          <div className="space-y-2">
-            {draft.targets.map((target, index) => (
-              <div className="grid grid-cols-[1fr_1fr_auto] gap-2" key={target.id ?? index}>
-                <input className="input" value={target.compound} onChange={(event) => updateTarget(index, { compound: event.target.value.toUpperCase() })} />
-                <input className="input" min="0" type="number" value={target.targetMgPerDose} onChange={(event) => updateTarget(index, { targetMgPerDose: Number(event.target.value) })} />
-                <button className="rounded-md bg-slate-100 px-2 text-sm" onClick={() => setDraft({ ...draft, targets: draft.targets.filter((_, targetIndex) => targetIndex !== index) })} type="button">
-                  Remove
-                </button>
-              </div>
-            ))}
-            <button className="rounded-md bg-slate-100 px-3 py-1.5 text-sm" onClick={() => setDraft({ ...draft, targets: [...draft.targets, { compound: "CBD", targetMgPerDose: 0 }] })} type="button">
-              Add Target
-            </button>
-          </div>
-        </EditorSection>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <EditorSection title="Target Compounds">
+            <div className="space-y-2">
+              {draft.targets.map((target, index) => (
+                <div className="grid grid-cols-[1fr_1fr_auto] gap-2" key={target.id ?? index}>
+                  <input className="input" value={target.compound} onChange={(event) => updateTarget(index, { compound: event.target.value.toUpperCase() })} />
+                  <input
+                    className="input"
+                    min="0"
+                    type="number"
+                    value={target.targetMgPerDose}
+                    onChange={(event) => {
+                      const value = finiteInputNumber(event.target.value);
+                      if (value !== undefined) updateTarget(index, { targetMgPerDose: value });
+                    }}
+                  />
+                  <button className="rounded-md bg-slate-100 px-2 text-sm" onClick={() => setDraft(rebalance({ ...draft, targets: draft.targets.filter((_, targetIndex) => targetIndex !== index) }))} type="button">
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button className="rounded-md bg-slate-100 px-3 py-1.5 text-sm" onClick={() => setDraft(rebalance({ ...draft, targets: [...draft.targets, { compound: "CBD", targetMgPerDose: 0 }] }))} type="button">
+                Add Target
+              </button>
+            </div>
+          </EditorSection>
+
+          <EditorSection title="Actual Compound Output">
+            <div className="grid gap-3 text-sm">
+              <CompoundOutputTable calculation={calculation} />
+            </div>
+          </EditorSection>
+        </div>
 
         <EditorSection title="Ingredients">
           <div className="space-y-2">
             {draft.ingredients.map((line, index) => (
-              <div className="grid gap-2 sm:grid-cols-[1.4fr_0.7fr_0.7fr_auto]" key={line.id ?? index}>
+              <div className="grid gap-2 sm:grid-cols-[1.4fr_0.7fr_0.7fr_2.5rem_auto]" key={line.id ?? index}>
                 <select className="input" value={line.ingredientProductId} onChange={(event) => updateLine(index, { ingredientProductId: event.target.value })}>
                   {ingredients.map((ingredient) => (
                     <option key={ingredient.id} value={ingredient.id}>
@@ -1086,12 +1204,38 @@ function RecipeEditor({
                     </option>
                   ))}
                 </select>
-                <input className="input" min="0" type="number" value={line.amount} onChange={(event) => updateLine(index, { amount: Number(event.target.value) })} />
-                <UnitSelect value={line.amountUnit} onChange={(value) => updateLine(index, { amountUnit: value })} />
-                <button className="rounded-md bg-slate-100 px-2 text-sm" onClick={() => setDraft({ ...draft, ingredients: draft.ingredients.filter((_, lineIndex) => lineIndex !== index) })} type="button">
+                <input
+                  className={`input ${line.locked ? "border-slate-400 bg-slate-100 text-slate-700" : ""}`}
+                  min="0"
+                  title={line.locked ? "Locked amount: this value stays fixed during recalculation." : "Unlocked amount: this value can be recalculated."}
+                  type="number"
+                  value={line.amount}
+                  onChange={(event) => {
+                    const value = finiteInputNumber(event.target.value);
+                    if (value !== undefined) updateLine(index, { amount: value }, true);
+                  }}
+                />
+                <UnitSelect
+                  className={line.locked ? "border-slate-400 bg-slate-100 text-slate-700" : undefined}
+                  value={line.amountUnit}
+                  onChange={(value) => updateLine(index, { amountUnit: value }, true)}
+                />
+                <button
+                  aria-label={line.locked ? "Locked amount. Click to unlock for recalculation." : "Unlocked amount. Click to lock this amount."}
+                  aria-pressed={line.locked}
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-md outline-none transition hover:bg-slate-100 focus:ring-2 focus:ring-leaf/20 ${
+                    line.locked ? "text-slate-900" : "text-slate-400"
+                  }`}
+                  onClick={() => updateLine(index, { locked: !line.locked })}
+                  title={line.locked ? "Locked: this amount stays fixed during recalculation." : "Unlocked: this amount can be recalculated."}
+                  type="button"
+                >
+                  <LockIcon locked={line.locked ?? false} />
+                </button>
+                <button className="rounded-md bg-slate-100 px-2 text-sm" onClick={() => setDraft(rebalance({ ...draft, ingredients: draft.ingredients.filter((_, lineIndex) => lineIndex !== index) }))} type="button">
                   Remove
                 </button>
-                <div className="text-xs text-slate-500 sm:col-span-4">
+                <div className="text-xs text-slate-500 sm:col-span-5">
                   {ingredientById.get(line.ingredientProductId)?.activeProfile.map((profile) => `${profile.compound} ${number(profile.value * 100, 2)}%`).join(", ") || "No compound profile"}
                 </div>
               </div>
@@ -1100,7 +1244,7 @@ function RecipeEditor({
               className="rounded-md bg-slate-100 px-3 py-1.5 text-sm"
               onClick={() =>
                 ingredients[0]
-                  ? setDraft({ ...draft, ingredients: [...draft.ingredients, { ingredientProductId: ingredients[0].id, amount: 0, amountUnit: "mg" }] })
+                  ? setDraft(rebalance({ ...draft, ingredients: [...draft.ingredients, { ingredientProductId: ingredients[0].id, amount: 0, amountUnit: "mg" }] }))
                   : undefined
               }
               type="button"
@@ -1123,6 +1267,17 @@ function RecipeEditor({
         <EditorSection title="Notes">
           <textarea className="input min-h-24" value={draft.notes ?? ""} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} />
         </EditorSection>
+
+        {[...new Set([...calculation.warnings, ...balanceWarnings])].length ? (
+          <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+            <div className="font-medium">Warnings</div>
+            <ul className="mt-1 list-disc pl-5">
+              {[...new Set([...calculation.warnings, ...balanceWarnings])].map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1233,6 +1388,16 @@ function IngredientReadOnly({
             <p className="mt-1 text-sm capitalize text-slate-500">{ingredient.category.replace("_", " ")}</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {ingredient.purchaseUrl ? (
+              <a
+                className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white"
+                href={ingredient.purchaseUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Order More
+              </a>
+            ) : null}
             <button className="rounded-md bg-leaf px-3 py-1.5 text-sm font-medium text-white" onClick={onEdit} type="button">
               {isExisting ? "Edit" : "Continue Editing"}
             </button>
@@ -1305,6 +1470,19 @@ function IngredientEditor({
     }));
   }
 
+  function updateName(name: string) {
+    setDraft((current) => {
+      const currentAutomaticPermalink = slugifyPermalink(current.name, "ingredient");
+      const shouldUpdatePermalink = !current.permalink || current.permalink === currentAutomaticPermalink;
+
+      return {
+        ...current,
+        name,
+        permalink: shouldUpdatePermalink ? slugifyPermalink(name, "ingredient") : current.permalink
+      };
+    });
+  }
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -1331,7 +1509,14 @@ function IngredientEditor({
         <EditorSection title="Basics">
           <div className="grid gap-3 sm:grid-cols-2">
             <Label text="Name">
-              <input className="input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+              <input className="input" value={draft.name} onChange={(event) => updateName(event.target.value)} />
+            </Label>
+            <Label text="Permalink">
+              <input
+                className="input"
+                value={draft.permalink}
+                onChange={(event) => setDraft({ ...draft, permalink: slugifyPermalink(event.target.value, "ingredient") })}
+              />
             </Label>
             <Label text="Category">
               <select className="input" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value as IngredientCategory })}>
@@ -1344,6 +1529,15 @@ function IngredientEditor({
             </Label>
             <Label text="Source">
               <input className="input" value={draft.source ?? ""} onChange={(event) => setDraft({ ...draft, source: event.target.value })} />
+            </Label>
+            <Label text="Purchase link">
+              <input
+                className="input"
+                placeholder="https://..."
+                type="url"
+                value={draft.purchaseUrl ?? ""}
+                onChange={(event) => setDraft({ ...draft, purchaseUrl: event.target.value })}
+              />
             </Label>
             <Label text="Archived">
               <select className="input" value={draft.isArchived ? "yes" : "no"} onChange={(event) => setDraft({ ...draft, isArchived: event.target.value === "yes" })}>
@@ -1449,10 +1643,26 @@ function IngredientEditor({
   );
 }
 
-function ReadOnlyPanel({ title, children }: { title: string; children: ReactNode }) {
+function CompoundOutputTable({ calculation }: { calculation: RecipeCalculationResult }) {
+  return (
+    <SimpleTable
+      headers={["Compound", "Target / dose", "Actual / dose", "Actual / bottle", "Status"]}
+      rows={calculation.contributions.map((contribution) => [
+        contribution.compound,
+        `${number(contribution.targetMgPerDose, 2)}mg`,
+        `${number(contribution.actualMgPerDose, 2)}mg`,
+        `${number(contribution.actualMgPerBottle, 2)}mg`,
+        contribution.status
+      ])}
+    />
+  );
+}
+
+function ReadOnlyPanel({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">{title}</h3>
+      <h3 className={description ? "text-sm font-semibold uppercase tracking-wide text-slate-500" : "mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500"}>{title}</h3>
+      {description ? <p className="mb-3 text-sm text-slate-500">{description}</p> : null}
       {children}
     </section>
   );
@@ -1527,9 +1737,17 @@ function NumberInput({ value, onChange }: { value: number | undefined; onChange:
   );
 }
 
-function UnitSelect({ value, onChange }: { value: AmountUnit; onChange: (value: AmountUnit) => void }) {
+function UnitSelect({
+  className = "",
+  value,
+  onChange
+}: {
+  className?: string;
+  value: AmountUnit;
+  onChange: (value: AmountUnit) => void;
+}) {
   return (
-    <select className="input" value={value} onChange={(event) => onChange(event.target.value as AmountUnit)}>
+    <select className={`input ${className}`} value={value} onChange={(event) => onChange(event.target.value as AmountUnit)}>
       {amountUnits.map((unit) => (
         <option key={unit} value={unit}>
           {unit}
@@ -1592,24 +1810,15 @@ function costBasisText(ingredient: IngredientProduct): string {
 }
 
 function SettingsView({
-  branding,
   recipeCategories,
   isSaving,
-  onSaveBranding,
   onSaveRecipeCategories
 }: {
-  branding: AppBranding;
   recipeCategories: string[];
   isSaving: boolean;
-  onSaveBranding: (branding: AppBranding) => void;
   onSaveRecipeCategories: (categories: string[]) => void;
 }) {
-  const [draftBranding, setDraftBranding] = useState(branding);
   const [draftCategories, setDraftCategories] = useState(recipeCategories.join("\n"));
-
-  useEffect(() => {
-    setDraftBranding(branding);
-  }, [branding]);
 
   useEffect(() => {
     setDraftCategories(recipeCategories.join("\n"));
@@ -1619,40 +1828,7 @@ function SettingsView({
     <section className="grid max-w-3xl gap-4">
       <div className="mb-1">
         <h2 className="text-2xl font-semibold">Settings</h2>
-        <p className="text-sm text-slate-600">Configure app branding and recipe categories.</p>
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold">App Branding</h3>
-            <p className="mt-1 text-sm text-slate-600">Customize the sidebar title, tagline, and browser tab title.</p>
-          </div>
-          <button
-            className="rounded-md bg-leaf px-3 py-1.5 text-sm font-medium text-white disabled:opacity-60"
-            disabled={isSaving}
-            onClick={() => onSaveBranding(draftBranding)}
-            type="button"
-          >
-            Save
-          </button>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <Label text="App title">
-            <input
-              className="input"
-              value={draftBranding.title}
-              onChange={(event) => setDraftBranding({ ...draftBranding, title: event.target.value })}
-            />
-          </Label>
-          <Label text="Tagline">
-            <input
-              className="input"
-              value={draftBranding.tagline}
-              onChange={(event) => setDraftBranding({ ...draftBranding, tagline: event.target.value })}
-            />
-          </Label>
-        </div>
+        <p className="text-sm text-slate-600">Configure recipe categories.</p>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">

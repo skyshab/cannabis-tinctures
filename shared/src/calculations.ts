@@ -190,7 +190,8 @@ export function convertUnit(
   }
 
   if (toUnit === "ml") {
-    return amountToMl(amount, fromUnit, densityGPerMl);
+    const volume = amountToMl(amount, fromUnit, densityGPerMl);
+    return volume.ml !== undefined ? { value: volume.ml } : { warning: volume.warning };
   }
 
   if (fromUnit === "ml" && (toUnit === "mg" || toUnit === "g")) {
@@ -323,4 +324,175 @@ export function solveIsolateAmountMg(targetMg: number, purityDecimal: number): n
 
 export function solveRsoAmountMg(targetThcMg: number, thcPotencyDecimal: number): number {
   return solveMassForTargetMg(targetThcMg, thcPotencyDecimal);
+}
+
+export interface RecipeRebalanceResult {
+  recipe: Recipe;
+  warnings: string[];
+}
+
+function roundRecipeAmount(value: number, unit: AmountUnit): number {
+  if (unit === "mg") return roundMassMg(value);
+  if (unit === "ml") return roundVolumeMl(value);
+  return Math.round(value * 1000) / 1000;
+}
+
+function getTargetCompoundOrder(recipe: Recipe): string[] {
+  return recipe.targets.map((target) => target.compound).filter(Boolean);
+}
+
+function contributionRatesForLine(
+  line: RecipeIngredientLine,
+  product: IngredientProduct,
+  targetCompounds: Set<string>,
+  warnings: string[]
+): Map<string, number> {
+  const rates = new Map<string, number>();
+
+  for (const profile of product.activeProfile) {
+    if (!targetCompounds.has(profile.compound)) continue;
+
+    const contribution = contributionFromProfile(
+      { ...line, amount: 1 },
+      product,
+      profile
+    );
+    if (contribution.warning) {
+      warnings.push(contribution.warning);
+      continue;
+    }
+
+    if (contribution.mg !== undefined && contribution.mg > 0) {
+      rates.set(profile.compound, contribution.mg);
+    }
+  }
+
+  return rates;
+}
+
+function subtractLineContributions(
+  line: RecipeIngredientLine,
+  product: IngredientProduct,
+  remainingByCompound: Map<string, number>,
+  warnings: string[]
+) {
+  for (const profile of product.activeProfile) {
+    if (!remainingByCompound.has(profile.compound)) continue;
+
+    const contribution = contributionFromProfile(line, product, profile);
+    if (contribution.warning) {
+      warnings.push(contribution.warning);
+      continue;
+    }
+
+    if (contribution.mg !== undefined) {
+      remainingByCompound.set(
+        profile.compound,
+        (remainingByCompound.get(profile.compound) ?? 0) - contribution.mg
+      );
+    }
+  }
+}
+
+function chooseDriverCompound(
+  targetOrder: string[],
+  rates: Map<string, number>,
+  remainingByCompound: Map<string, number>
+): string | undefined {
+  return (
+    targetOrder.find((compound) => (rates.get(compound) ?? 0) > 0 && (remainingByCompound.get(compound) ?? 0) > MET_TOLERANCE_MG_PER_BOTTLE) ??
+    targetOrder.find((compound) => (rates.get(compound) ?? 0) > 0)
+  );
+}
+
+export function rebalanceRecipeIngredients(
+  recipe: Recipe,
+  products: IngredientProduct[]
+): RecipeRebalanceResult {
+  const warnings: string[] = [];
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const targetOrder = getTargetCompoundOrder(recipe);
+  const targetCompounds = new Set(targetOrder);
+  const dosesPerBottle = getDosesPerBottle(recipe.bottleVolumeMl, recipe.doseVolumeMl);
+  const remainingByCompound = new Map(
+    recipe.targets.map((target) => [target.compound, targetMgPerBottle(target.targetMgPerDose, dosesPerBottle)])
+  );
+  let ingredients = recipe.ingredients.map((line) => ({ ...line }));
+
+  ingredients.forEach((line) => {
+    const product = productById.get(line.ingredientProductId);
+    if (!product) {
+      warnings.push(`Recipe references missing ingredient ${line.ingredientProductId}.`);
+      return;
+    }
+
+    const rates = contributionRatesForLine(line, product, targetCompounds, warnings);
+    if (rates.size === 0) return;
+
+    if (line.locked) {
+      subtractLineContributions(line, product, remainingByCompound, warnings);
+    }
+  });
+
+  ingredients = ingredients.map((line) => {
+    if (line.locked) return line;
+
+    const product = productById.get(line.ingredientProductId);
+    if (!product) return line;
+
+    const rates = contributionRatesForLine(line, product, targetCompounds, warnings);
+    const driverCompound = chooseDriverCompound(targetOrder, rates, remainingByCompound);
+    if (!driverCompound) return line;
+
+    const rate = rates.get(driverCompound) ?? 0;
+    const remainingMg = remainingByCompound.get(driverCompound) ?? 0;
+    const amount = rate > 0 ? roundRecipeAmount(Math.max(remainingMg, 0) / rate, line.amountUnit) : line.amount;
+    const balancedLine = { ...line, amount };
+    subtractLineContributions(balancedLine, product, remainingByCompound, warnings);
+
+    return balancedLine;
+  });
+
+  const unlockedCarrierIndexes = ingredients
+    .map((line, index) => {
+      const product = productById.get(line.ingredientProductId);
+      return product?.category === "carrier_oil" && !line.locked ? index : -1;
+    })
+    .filter((index) => index >= 0);
+
+  if (unlockedCarrierIndexes.length > 0) {
+    const firstCarrierIndex = unlockedCarrierIndexes[0];
+    const carrierDraft: Recipe = {
+      ...recipe,
+      ingredients: ingredients.map((line, index) =>
+        unlockedCarrierIndexes.includes(index) ? { ...line, amount: 0, amountUnit: "ml" } : line
+      )
+    };
+    const carrierVolumeMl = calculateRecipe(carrierDraft, products).estimatedCarrierVolumeMl ?? 0;
+
+    ingredients = ingredients.map((line, index) => {
+      if (!unlockedCarrierIndexes.includes(index)) return line;
+      return {
+        ...line,
+        amount: index === firstCarrierIndex ? carrierVolumeMl : 0,
+        amountUnit: "ml"
+      };
+    });
+  }
+
+  for (const [compound, remainingMg] of remainingByCompound) {
+    if (remainingMg > MET_TOLERANCE_MG_PER_BOTTLE) {
+      warnings.push(`${compound} is still under target by ${roundMassMg(remainingMg)}mg per bottle.`);
+    } else if (remainingMg < -MET_TOLERANCE_MG_PER_BOTTLE) {
+      warnings.push(`${compound} is over target by ${roundMassMg(Math.abs(remainingMg))}mg per bottle.`);
+    }
+  }
+
+  return {
+    recipe: {
+      ...recipe,
+      ingredients
+    },
+    warnings
+  };
 }
